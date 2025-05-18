@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ЕГЭ Лента слов — баттл</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600&display=swap');
+
+  body {
+    font-family: 'Montserrat', sans-serif;
+    background: linear-gradient(135deg, #1a1a1a, #8b0000);
+    margin: 0;
+    padding: 0;
+    color: #f4f4f4;
+    overflow-x: hidden;
+  }
+  #container {
+    max-width: 600px;
+    margin: 40px auto;
+    padding: 30px;
+    background: #222;
+    box-shadow: 0 10px 30px rgba(255,0,0,0.3);
+    border-radius: 20px;
+    text-align: center;
+  }
+  input[type="text"], input[type="password"] {
+    width: 90%;
+    padding: 12px;
+    margin: 10px 0;
+    border-radius: 10px;
+    border: 1px solid #555;
+    background: #111;
+    color: white;
+    font-size: 16px;
+  }
+  input:focus {
+    border-color: red;
+    outline: none;
+  }
+  button {
+    margin: 8px;
+    padding: 12px 20px;
+    font-size: 16px;
+    font-weight: bold;
+    border-radius: 12px;
+    border: none;
+    background: crimson;
+    color: white;
+    cursor: pointer;
+    transition: 0.3s;
+  }
+  button:hover {
+    background: darkred;
+    transform: scale(1.05);
+  }
+  .hidden { display: none; }
+  .option {
+    display: inline-block;
+    margin: 8px;
+    padding: 12px 24px;
+    font-size: 20px;
+    font-weight: bold;
+    border-radius: 50px;
+    border: none;
+    background: linear-gradient(90deg, crimson, darkred);
+    color: white;
+    cursor: pointer;
+    transition: 0.3s;
+  }
+  .option:hover {
+    transform: scale(1.1);
+  }
+  #wordCard {
+    font-size: 40px;
+    margin: 40px 0 20px;
+    opacity: 0;
+    transition: opacity 0.6s ease-in-out, transform 0.6s ease-in-out;
+    transform: translateY(-10px);
+  }
+  #wordCard.show {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  #progressContainer {
+    background: #333;
+    border-radius: 8px;
+    height: 12px;
+    overflow: hidden;
+    margin: 20px 0;
+  }
+  #progressBar {
+    height: 100%;
+    background: linear-gradient(to right, red, crimson);
+    width: 0%;
+    transition: width 0.5s ease;
+  }
+  .feedback {
+    margin-top: 20px;
+    font-size: 18px;
+    font-weight: bold;
+  }
+  .correct { color: #00e676; }
+  .incorrect { color: #ff1744; }
+  select {
+    padding: 10px;
+    font-size: 16px;
+    margin-bottom: 20px;
+    border-radius: 10px;
+    border: 1px solid #444;
+    background: #111;
+    color: white;
+  }
+  .confetti {
+    position: absolute;
+    width: 8px;
+    height: 8px;
+    background-color: #fff;
+    z-index: 1000;
+    opacity: 0.8;
+    border-radius: 50%;
+    animation: fall 1s linear forwards;
+  }
+  @keyframes fall {
+    to {
+      transform: translateY(300px) rotate(360deg);
+      opacity: 0;
+    }
+  }
+  #scoreDisplay {
+    margin-top: 20px;
+    font-size: 18px;
+    font-weight: bold;
+  }
+</style>
+</head>
+<body>
+<div id="container">
+
+  <!-- Регистрация и вход -->
+  <div id="authSection">
+    <h2>Регистрация / Вход</h2>
+    <input id="username" type="text" placeholder="Имя пользователя" autocomplete="off" />
+    <input id="password" type="password" placeholder="Пароль" autocomplete="off" />
+    <div>
+      <button id="registerBtn">Зарегистрироваться</button>
+      <button id="loginBtn">Войти</button>
+    </div>
+    <div id="authMessage" style="margin-top:10px;"></div>
+  </div>
+
+  <!-- Выбор темы -->
+  <div id="themeSection" class="hidden">
+    <h2>Выберите тему</h2>
+    <select id="themeSelect"></select>
+    <button id="startGameBtn">Начать игру</button>
+    <button id="logoutBtn" style="background:#660000;">Выйти</button>
+  </div>
+
+  <!-- Игра -->
+  <div id="gameSection" class="hidden">
+    <h2>ЕГЭ: Лента слов</h2>
+    <div id="wordCard"></div>
+    <div id="optionsContainer"></div>
+    <div id="feedback"></div>
+
+    <div id="progressContainer"><div id="progressBar"></div></div>
+    <div id="scoreDisplay">Очки: <span id="score">0</span></div>
+    <button id="nextBtn" class="hidden">Следующее слово</button>
+  </div>
+
+</div>
+
+<script>
+  // База пользователей и тем — localStorage
+  // Для простоты храним пользователей в localStorage в формате: {username: {password, scores: {theme:score, ...}}}
+
+  const usersKey = "egeshkaUsers";
+
+  function getUsers() {
+    return JSON.parse(localStorage.getItem(usersKey) || "{}");
+  }
+  function saveUsers(users) {
+    localStorage.setItem(usersKey, JSON.stringify(users));
+  }
+
+  let currentUser = null;
+  let currentTheme = null;
+  let currentWordList = [];
+  let currentIndex = 0;
+  let score = 0;
+
+  // Темы и слова (пропуски: __, correct буква)
+const themes = {
+  "Орфография": [
+    { text: "Интересн__й", correct: "ы" },
+    { text: "Хорош__й", correct: "и" },
+    { text: "Ч__стный", correct: "е" },
+    { text: "Письм__", correct: "о" },
+    { text: "Вед__шь", correct: "ё" },
+    { text: "Л__то", correct: "е" },
+    { text: "Быстр__й", correct: "ы" },
+    { text: "Горьк__й", correct: "и" },
+    { text: "Зв__здный", correct: "е" },
+    { text: "Весёл__й", correct: "ы" },
+    { text: "Зон__тик", correct: "т" },
+    { text: "Маленьк__й", correct: "и" },
+    { text: "Ветр__ный", correct: "я" },
+    { text: "Скор__й", correct: "ы" },
+    { text: "Тепл__е", correct: "ы" },
+    { text: "Глубок__й", correct: "и" },
+    { text: "Свеж__й", correct: "и" },
+    { text: "Зелен__й", correct: "ы" },
+    { text: "Красив__й", correct: "ы" },
+    { text: "Грустн__й", correct: "ы" },
+    { text: "Син__й", correct: "и" },
+    { text: "Дорог__й", correct: "о" },
+    { text: "Легк__й", correct: "о" },
+    { text: "Тяжёл__й", correct: "ы" }
+  ],
+  "Пунктуация": [
+    { text: "Я, к__к говорил", correct: "а" },
+    { text: "Если придё__", correct: "т" },
+    { text: "Он пришёл, а она __шла", correct: "у" },
+    { text: "Они пошли в парк, __м хорошо", correct: "и" },
+    { text: "Ты хочешь пойти __ Со мной", correct: "?" },
+    { text: "Она сказала: __ 'Я приду'.", correct: "«" },
+    { text: "Время — деньги.", correct: "—" },
+    { text: "Дождь, снег __ град.", correct: "," },
+    { text: "Пойдём в парк __ если погода позволит.", correct: "," },
+    { text: "Он подумал: __ 'Нужно учиться!'", correct: "«" },
+    { text: "Где ты был__", correct: "?" },
+    { text: "Он пришёл__", correct: "." },
+    { text: "Ура__", correct: "!" },
+    { text: "Он не знал__ что делать.", correct: "," },
+    { text: "Если хочешь__ позвони.", correct: "," },
+    { text: "Она сказала__ что придёт.", correct: "," },
+    { text: "Мы шли__ но опоздали.", correct: "," },
+    { text: "Пойдём__ но быстро.", correct: "," }
+  ],
+  "Лексика": [
+    { text: "Он был и__вестен", correct: "з" },
+    { text: "Красив__й дом", correct: "ы" },
+    { text: "Холодн__й вечер", correct: "ы" },
+    { text: "Солнц__ светит", correct: "е" },
+    { text: "Она купила __родукты", correct: "п" },
+    { text: "У него есть __автомобиль", correct: "а" },
+    { text: "Мы живём в __ороде", correct: "г" },
+    { text: "Утром светит __олнце", correct: "с" },
+    { text: "Он учится в __коле", correct: "ш" },
+    { text: "Птицы летают в __оздухе", correct: "в" },
+    { text: "Зелен__й луг", correct: "ы" },
+    { text: "Бел__й медведь", correct: "ы" },
+    { text: "Громк__й звук", correct: "и" },
+  ],
+  "Синтаксис": [
+    { text: "Он сказал, что __дёт домой", correct: "и" },
+    { text: "Если __удет дождь, останемся дома", correct: "б" },
+    { text: "Когда __риедешь, позвони мне", correct: "п" },
+    { text: "Чтобы __онять, надо слушать", correct: "п" },
+    { text: "Пока __ы спишь, я учусь", correct: "т" },
+  ],
+  "Морфология": [
+    { text: "Я __итаю книгу", correct: "ч" },
+    { text: "Ты __ежал домой", correct: "б" },
+    { text: "Мы __оворим правду", correct: "г" },
+    { text: "Они __аботают вместе", correct: "р" },
+    { text: "Он __умал долго", correct: "д" },
+    { text: "Вы __лушаете внимательно", correct: "с" },
+    { text: "Она __грает на пианино", correct: "и" },
+    { text: "Дети __исуют красиво", correct: "р" },
+    { text: "Я __юблю читать", correct: "л" },
+    { text: "Ты __одишь в школу", correct: "х" },
+    { text: "Мы __ишем письма", correct: "п" },
+    { text: "Он __итает газету", correct: "ч" }
+  ],
+  "Фразеология": [
+    { text: "Выйти на __вязь", correct: "с" },
+    { text: "Взять быка за __ога", correct: "р" },
+    { text: "Без труда не вытащишь __ рыбку из пруда", correct: "и" },
+    { text: "Сидеть сложа __уки", correct: "р" },
+  ],
+};
+
+
+  // Инициализация темы селекта
+  const themeSelect = document.getElementById("themeSelect");
+  for (const themeName in themes) {
+    const option = document.createElement("option");
+    option.value = themeName;
+    option.textContent = themeName;
+    themeSelect.appendChild(option);
+  }
+
+  // Элементы UI
+  const authSection = document.getElementById("authSection");
+  const themeSection = document.getElementById("themeSection");
+  const gameSection = document.getElementById("gameSection");
+  const wordCard = document.getElementById("wordCard");
+  const optionsContainer = document.getElementById("optionsContainer");
+  const feedback = document.getElementById("feedback");
+  const progressBar = document.getElementById("progressBar");
+  const scoreDisplay = document.getElementById("score");
+  const nextBtn = document.getElementById("nextBtn");
+  const authMessage = document.getElementById("authMessage");
+
+  // Регистрация
+  document.getElementById("registerBtn").onclick = () => {
+    const username = document.getElementById("username").value.trim();
+    const password = document.getElementById("password").value.trim();
+    if(!username || !password) {
+      authMessage.textContent = "Введите имя и пароль!";
+      return;
+    }
+    const users = getUsers();
+    if(users[username]) {
+      authMessage.textContent = "Пользователь уже существует!";
+      return;
+    }
+    users[username] = { password, scores: {} };
+    saveUsers(users);
+    authMessage.style.color = "lightgreen";
+    authMessage.textContent = "Регистрация прошла успешно! Теперь войдите.";
+  };
+
+  // Вход
+  document.getElementById("loginBtn").onclick = () => {
+    const username = document.getElementById("username").value.trim();
+    const password = document.getElementById("password").value.trim();
+    if(!username || !password) {
+      authMessage.textContent = "Введите имя и пароль!";
+      return;
+    }
+    const users = getUsers();
+    if(!users[username] || users[username].password !== password) {
+      authMessage.textContent = "Неверное имя или пароль!";
+      return;
+    }
+    currentUser = username;
+    authMessage.textContent = "";
+    authMessage.style.color = "#f4f4f4";
+    showThemeSelection();
+  };
+
+  // Выход
+  document.getElementById("logoutBtn").onclick = () => {
+    currentUser = null;
+    currentTheme = null;
+    currentWordList = [];
+    currentIndex = 0;
+    score = 0;
+    authSection.classList.remove("hidden");
+    themeSection.classList.add("hidden");
+    gameSection.classList.add("hidden");
+    document.getElementById("username").value = "";
+    document.getElementById("password").value = "";
+  };
+
+  // Показать выбор темы
+  function showThemeSelection() {
+    authSection.classList.add("hidden");
+    themeSection.classList.remove("hidden");
+    gameSection.classList.add("hidden");
+  }
+
+  // Начать игру
+  document.getElementById("startGameBtn").onclick = () => {
+    currentTheme = themeSelect.value;
+    currentWordList = themes[currentTheme];
+    currentIndex = 0;
+    score = 0;
+    updateScoreDisplay();
+    themeSection.classList.add("hidden");
+    gameSection.classList.remove("hidden");
+    feedback.textContent = "";
+    nextBtn.classList.add("hidden");
+    showWord();
+    updateProgress();
+  };
+
+  // Показать слово с пропуском
+  function showWord() {
+    const w = currentWordList[currentIndex];
+    // Подсветка слова и плавное появление
+    wordCard.classList.remove("show");
+    setTimeout(() => {
+      wordCard.textContent = w.text;
+      wordCard.classList.add("show");
+    }, 200);
+
+    // Опции — буквы для выбора (буквы вокруг правильной + неправильные)
+    // Для простоты — буквы русского алфавита (сделаем набор вариантов)
+    const allLetters = ["а","е","ё","и","о","у","ы","э","ю","я"];
+    const correct = w.correct;
+
+    // Сформируем варианты: правильная + 3 случайные разные буквы
+    let options = new Set();
+    options.add(correct);
+    while(options.size < 4) {
+      const rnd = allLetters[Math.floor(Math.random() * allLetters.length)];
+      if(rnd !== correct) options.add(rnd);
+    }
+    options = Array.from(options);
+    options.sort(() => Math.random() - 0.5); // перемешать
+
+    optionsContainer.innerHTML = "";
+    options.forEach(opt => {
+      const btn = document.createElement("button");
+      btn.className = "option";
+      btn.textContent = opt;
+      btn.onclick = () => selectOption(opt);
+      btn.disabled = false;
+      optionsContainer.appendChild(btn);
+    });
+  }
+
+  // Выбор буквы
+  function selectOption(letter) {
+    const correct = currentWordList[currentIndex].correct;
+    if(letter === correct) {
+      feedback.innerHTML = "<span class='correct'>✅ Верно!</span>";
+      score++;
+      launchConfetti();
+      saveScore();
+    } else {
+      feedback.innerHTML = "<span class='incorrect'>❌ Ошибка!</span>";
+    }
+    updateScoreDisplay();
+    // Блокируем кнопки и показываем кнопку след. слова
+    document.querySelectorAll(".option").forEach(b => b.disabled = true);
+    nextBtn.classList.remove("hidden");
+  }
+
+  // Следующее слово
+  nextBtn.onclick = () => {
+    currentIndex++;
+    if(currentIndex >= currentWordList.length) {
+      alert("Игра окончена! Ваш счёт: " + score);
+      showThemeSelection();
+      return;
+    }
+    feedback.textContent = "";
+    nextBtn.classList.add("hidden");
+    showWord();
+    updateProgress();
+  };
+
+  // Обновить прогресс
+  function updateProgress() {
+    const percent = ((currentIndex) / currentWordList.length) * 100;
+    progressBar.style.width = percent + "%";
+  }
+
+  // Обновить счёт
+  function updateScoreDisplay() {
+    scoreDisplay.textContent = score;
+  }
+
+  // Сохранить счёт в профиль пользователя
+  function saveScore() {
+    if(!currentUser || !currentTheme) return;
+    const users = getUsers();
+    if(!users[currentUser].scores) users[currentUser].scores = {};
+    if(!users[currentUser].scores[currentTheme] || users[currentUser].scores[currentTheme] < score) {
+      users[currentUser].scores[currentTheme] = score;
+      saveUsers(users);
+    }
+  }
+
+  // Конфетти анимация
+  function launchConfetti() {
+    for(let i=0; i<20; i++) {
+      const confetti = document.createElement("div");
+      confetti.className = "confetti";
+      confetti.style.left = (Math.random() * window.innerWidth) + "px";
+      confetti.style.top = (Math.random() * 100 + 100) + "px";
+      confetti.style.backgroundColor = `hsl(${Math.random()*360}, 100%, 60%)`;
+      confetti.style.animationDuration = (Math.random()*0.8+0.5) + "s";
+      document.body.appendChild(confetti);
+      setTimeout(() => confetti.remove(), 1000);
+    }
+  }
+</script>
+</body>
+</html>
